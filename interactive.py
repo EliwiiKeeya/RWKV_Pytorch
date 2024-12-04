@@ -1,12 +1,10 @@
 ﻿import torch
-import streamlit as st
 from audio import SVCAudioWebInterface
 from src.model import RWKV_RNN
 from src.sampler import sample_logits
 from src.rwkv_tokenizer import RWKV_TOKENIZER
 
 
-@st.cache_resource
 def init_model():
     # 模型参数配置
     args = {
@@ -99,59 +97,30 @@ class TextFilter:
         self.append(s)
         return self._main()
 
+def main():
+    text_generator = TextGenerator()
+    text_filter = TextFilter()
+    audio_interface = SVCAudioWebInterface()
+    
+    while True:
+        print("User: ", end="")
+        user_input = input()
+        print("\nAssistant: ", end="")
 
-class App(TextGenerator):
-    def __init__(self) -> None:
-        super().__init__()
-        self.text_filter = TextFilter()
-        self.audio_interface = SVCAudioWebInterface()
-
-    def __call__(self):
-        if self.prompt:
-            self.text_filter.content = ""
-            response = self._generate_text_stream()
-            while True:
-                delta = next(response)
-                if delta == "data: [DONE]":
-                    self.text_filter.content = self.text_filter.content.strip()
-                    if self.text_filter.content:
-                        print(self.text_filter.content)
-                        self.audio_interface.process(self.text_filter.content)
-                    break
-                yield delta
-                sentence = self.text_filter(delta)
-                if sentence:
-                    print(sentence)
-                    self.audio_interface.process(sentence)
+        text_generator.prompt = "User: " + str(user_input) + "\n\nAssistant: "
+        gen = text_generator()
+        text_filter.content = ""
+        for token in gen:
+            print(token, end='')
+            sentence = text_filter(token)
+            if sentence:
+                audio_interface.process(sentence)
+                pass
+        text_filter.content = text_filter.content.strip()
+        if text_filter.content:
+            audio_interface.process(text_filter.content)
+            pass
 
 
-st.title("Simple chat")
-
-# Initialize chat history
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "text_generator" not in st.session_state:
-    st.session_state.text_generator = App()
-
-# Display chat messages from history on app rerun
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-    st.session_state.text_generator.prompt = f"{message['role']}: {message['content']}\n\n"
-
-# Accept user input
-user_input = st.chat_input("What is up?")
-if user_input:
-    # Display user message in chat message container
-    with st.chat_message("user"):
-        st.markdown(user_input)
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    st.session_state.text_generator.prompt = "User: " + str(user_input) + "\n\nAssistant: "
-
-    with st.chat_message("assistant"):
-        response = st.write_stream(st.session_state.text_generator())
-        # Add assistant response to chat history
-        response = response.strip()
-        st.session_state.messages.append({"role": "assistant", "content": str(response)})
+if __name__ == "__main__":
+    main()
